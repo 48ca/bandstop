@@ -6,9 +6,10 @@ if len(sys.argv) == 1:
     sys.exit(1)
 
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.io import wavfile
 from scipy import signal
-from scipy.fftpack import fft
+from scipy.fftpack import fft, fftfreq
 
 plt.ion()
 
@@ -45,18 +46,43 @@ def process(filename):
     print("============================"+"="*len(filename))
 
 
-    for c in range(channels):
-        parse(snd.T[c], depth, samples, fs, duration)
+    # for c in range(channels):
+    #    parse(snd.T[c], depth, samples, fs, duration)
+    parse(snd.T[0], depth, samples, fs, duration)
+
+def find_outstanding_frequencies(data, points_per_sample, fs):
+    # THRESHOLD = 5000000
+    diff_data = np.diff(data)
+    low_band = points_per_sample//4 # Half of our divided version
+    high_ind = np.argpartition(diff_data[low_band:], -5)[-5:] + low_band
+    low_ind = np.argpartition(diff_data[low_band:], 5)[:5] + low_band
+    # np.where(data[high_ind] > THRESHOLD * points_per_sample, high_ind, 0)
+    sys.stdout.write("h indices: ")
+    print(fs/points_per_sample * (high_ind))
+    sys.stdout.write("l indeces: ")
+    print(fs/points_per_sample * (low_ind))
+    # print(fs/points_per_sample * data[high_ind])
+    for x in high_ind:
+        plt.axvline(x=x, color='b')
+    for x in low_ind:
+        plt.axvline(x=x, color='g')
 
 def parse(sound_data, depth, samples, fs, duration):
-    FFT_SAMPLE_SIZE = 10
-    for i in range(0, samples, FFT_SAMPLE_SIZE*fs//1000):
-        fft_data = fft(sound_data[i:(i+FFT_SAMPLE_SIZE*fs//1000)])
+    FFT_SAMPLE_SIZE = 1000 # 100 milliseconds
+    points_per_sample = FFT_SAMPLE_SIZE*fs//1000
+    frequency_data = fftfreq(points_per_sample, FFT_SAMPLE_SIZE/1000)*points_per_sample * FFT_SAMPLE_SIZE/1000
+    frequency_conversion_ratio = fs/points_per_sample
+    for i in range(0, samples, points_per_sample):
+        fft_data = fft(sound_data[i:(i+points_per_sample)])
         real_length = len(fft_data)//2
-        plt.plot(abs(fft_data[:(real_length-1)]),'r')
+        real_data = abs(fft_data[:(real_length-1)])
+
+        plt.plot(real_data,'r')
         plt.show()
-        plt.pause(0.001)
+        plt.pause(0.2)
         plt.clf()
+
+        find_outstanding_frequencies(real_data, points_per_sample, fs)
 
 
 for filename in sys.argv[1:]:
