@@ -24,17 +24,20 @@ def process(filename):
 
     depth_type = snd.dtype
 
-    if depth_type.num == 2:
-        depth = 8
-    elif depth_type.num == 3:
+    # Produces interesting results
+    # if depth_type.num == 2:
+    #     depth = 8
+    if depth_type.num == 3:
         depth = 16
+    # Not supported by scipy
     # elif depth_type == 4:
     #     depth = 24
     elif depth_type.num == 5:
         depth = 32
     else:
         print("Depth '{}' is unsupported".format(depth_type.name))
-        exit(1)
+        print("Skipping...")
+        return
 
 
 
