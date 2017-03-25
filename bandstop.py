@@ -22,6 +22,7 @@ FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 100 # Hz
 FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
 
 DEBUG = False
+SHOW_FFT = False
 
 def gen_output_filename(filename):
     pattern = re.compile("\.[^.]+$")
@@ -44,16 +45,11 @@ def process(filename):
     print("Depth: {}-bit".format(sndobj.depth))
     print("============================"+"="*len(filename))
 
-    signals_to_save = None
+    signals_to_save = np.array([], dtype=sndobj.snd.dtype).reshape(sndobj.samples, 0)
     for c in range(sndobj.channels):
         print("Parsing channel {}".format(c))
         cleaned_signal = parse(snd.T[c], sndobj)
-        if signals_to_save is None:
-            print("Setting")
-            signals_to_save = np.array(cleaned_signal)
-        else:
-            print("Stacking")
-            np.vstack([signals_to_save, cleaned_signal])
+        signals_to_save = np.column_stack([signals_to_save, cleaned_signal])
 
     if DEBUG:
         print("-------------")
@@ -96,10 +92,11 @@ def find_outstanding_frequencies(data, sndobj, points_per_sample):
         # print(fs/points_per_sample * data[high_ind])
 
         # Convert back to graph units
-        for x in (high_ind * points_per_sample)//sndobj.fs:
-            plt.axvline(x=x, color='b')
-        for x in (low_ind * points_per_sample)//sndobj.fs:
-            plt.axvline(x=x, color='g')
+        if SHOW_FFT:
+            for x in (high_ind * points_per_sample)//sndobj.fs:
+                plt.axvline(x=x, color='b')
+            for x in (low_ind * points_per_sample)//sndobj.fs:
+                plt.axvline(x=x, color='g')
 
     ret = []
     for ind1 in high_ind:
@@ -134,7 +131,7 @@ def parse(sound_data, sndobj):
         # We only care about the first half; the other half is the same
         real_data = abs(fft_data[:(real_length-1)])
 
-        if DEBUG:
+        if SHOW_FFT:
             # Plot the data as a frequency spectrum
             plt.plot(real_data,'r')
             plt.show()

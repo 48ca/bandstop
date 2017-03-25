@@ -16,12 +16,12 @@ class Sound(object):
 
         # Produces interesting results
         # if depth_type.num == 2:
-        #     depth = 8
+            # self.depth = 8
         if depth_type.num == 3:
             self.depth = 16
         # Not supported by scipy
         # elif depth_type == 4:
-        #     depth = 24
+        #     self.depth = 24
         elif depth_type.num == 5:
             self.depth = 32
         else:
