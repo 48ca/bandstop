@@ -10,91 +10,108 @@ import numpy as np
 from scipy.io import wavfile
 from scipy import signal
 from scipy.fftpack import fft, fftfreq
+import argparse
+from sound import Sound, DepthException
 
 plt.ion() # Make the plot interactive
 # Allows us to update it in the code
 
+FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 100 # Hz
+
+FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
+
+DEBUG = True
+
 def process(filename):
     fs, snd = wavfile.read(filename)
 
-    samples, channels = snd.shape
+    try:
+        sndobj = Sound(fs, snd)
 
-    duration = samples/fs
-
-    # The data type used to store the samples
-    depth_type = snd.dtype
-
-    # Produces interesting results
-    # if depth_type.num == 2:
-    #     depth = 8
-    if depth_type.num == 3:
-        depth = 16
-    # Not supported by scipy
-    # elif depth_type == 4:
-    #     depth = 24
-    elif depth_type.num == 5:
-        depth = 32
-    else:
-        print("Depth '{}' is unsupported".format(depth_type.name))
+    except DepthException as e:
+        print(e.message)
         print("Skipping...")
         return
 
-
-
     print("==== Information about {} ====".format(filename))
-    print("Samples: {}".format(samples))
-    print("Channels: {}".format(channels))
-    print("Duration: {}".format(duration))
-    print("Depth: {}-bit".format(depth))
+    print("Samples: {}".format(sndobj.samples))
+    print("Channels: {}".format(sndobj.channels))
+    print("Duration: {}".format(sndobj.duration))
+    print("Depth: {}-bit".format(sndobj.depth))
     print("============================"+"="*len(filename))
 
 
     # for c in range(channels):
-    #    parse(snd.T[c], depth, samples, fs, duration)
-    parse(snd.T[0], depth, samples, fs, duration)
+    #    parse(snd.T[c], sndobj)
+    parse(snd.T[0], sndobj)
 
-def find_outstanding_frequencies(data, points_per_sample, fs):
+def find_outstanding_frequencies(data, sndobj, points_per_sample):
     # THRESHOLD = 5000000
     diff_data = np.diff(data)
     low_band = points_per_sample//4 # Half of our divided version
+    # Above this value are frequencies that are considered for removal
 
     num_outstanding = 3
 
     # Find the frequencies of highest difference
-    high_ind = np.argpartition(diff_data[low_band:], -num_outstanding)[-num_outstanding:] + low_band
+    low_ind = np.argpartition(diff_data[low_band:], -num_outstanding)[-num_outstanding:] + low_band
     # Find the frequencies of most negative difference
-    low_ind = np.argpartition(-diff_data[low_band:], -num_outstanding)[-num_outstanding:] + low_band
-    # np.where(data[high_ind] > THRESHOLD * points_per_sample, high_ind, 0)
-    sys.stdout.write("h indices: ")
-    print(fs/points_per_sample * (high_ind))
-    sys.stdout.write("l indeces: ")
-    print(fs/points_per_sample * (low_ind))
-    # print(fs/points_per_sample * data[high_ind])
-    for x in high_ind:
-        plt.axvline(x=x, color='b')
-    for x in low_ind:
-        plt.axvline(x=x, color='g')
+    high_ind = np.argpartition(-diff_data[low_band:], -num_outstanding)[-num_outstanding:] + low_band
 
-def parse(sound_data, depth, samples, fs, duration):
-    FFT_SAMPLE_SIZE = 1000 # FFT sample size in milliseconds
-    points_per_sample = FFT_SAMPLE_SIZE*fs//1000
+    # Normalize
+    low_ind = (low_ind * sndobj.fs)//points_per_sample
+    high_ind = (high_ind * sndobj.fs)//points_per_sample
+
+    # np.where(data[high_ind] > THRESHOLD * points_per_sample, high_ind, 0)
+
+    if DEBUG:
+        sys.stdout.write("h indices: ")
+        print(high_ind)
+        sys.stdout.write("l indeces: ")
+        print(low_ind)
+        # print(fs/points_per_sample * data[high_ind])
+
+        # Convert back to graph units
+        for x in (high_ind * points_per_sample)//sndobj.fs:
+            plt.axvline(x=x, color='b')
+        for x in (low_ind * points_per_sample)//sndobj.fs:
+            plt.axvline(x=x, color='g')
+
+    ret = []
+    for ind1 in high_ind:
+        for ind2 in low_ind:
+            if abs(ind1 - ind2) < FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE:
+                ret.append((ind1, ind2) if ind2 > ind1 else(ind2, ind1))
+
+    return ret
+
+def extract_bandstop(candidates):
+    return []
+
+def parse(sound_data, sndobj):
+    points_per_sample = FFT_SAMPLE_SIZE*sndobj.fs//1000
     # frequency_data = fftfreq(points_per_sample, FFT_SAMPLE_SIZE/1000)*points_per_sample * FFT_SAMPLE_SIZE/1000
     # frequency_conversion_ratio = fs/points_per_sample
-    for i in range(0, samples, points_per_sample):
+    candidate_frequencies = []
+    for i in range(0, sndobj.samples, points_per_sample):
         # FFT data
         fft_data = fft(sound_data[i:(i+points_per_sample)])
         real_length = len(fft_data)//2
         # We only care about the first half; the other half is the same
         real_data = abs(fft_data[:(real_length-1)])
 
-        # Plot the data as a frequency spectrum
-        plt.plot(real_data,'r')
-        plt.show()
-        plt.pause(0.2)
-        plt.clf()
+        if DEBUG:
+            # Plot the data as a frequency spectrum
+            plt.plot(real_data,'r')
+            plt.show()
+            plt.pause(0.2)
+            plt.clf()
 
-        find_outstanding_frequencies(real_data, points_per_sample, fs)
+        sample_freqs = find_outstanding_frequencies(real_data, sndobj, points_per_sample)
 
+    candidate_frequencies += sample_freqs
+    bandstop_frequencies = extract_bandstop(candidate_frequencies)
+    bandstop(bandstop_frequencies, sndobj)
 
 for filename in sys.argv[1:]:
     process(filename)
