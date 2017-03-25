@@ -12,6 +12,7 @@ from scipy import signal
 from scipy.fftpack import fft, fftfreq
 import argparse
 from sound import Sound, DepthException
+import re
 
 plt.ion() # Make the plot interactive
 # Allows us to update it in the code
@@ -20,7 +21,11 @@ FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 100 # Hz
 
 FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
 
-DEBUG = True
+DEBUG = False
+
+def gen_output_filename(filename):
+    pattern = re.compile("\.[^.]+$")
+    return pattern.sub("-out.wav", filename)
 
 def process(filename):
     fs, snd = wavfile.read(filename)
@@ -29,7 +34,6 @@ def process(filename):
         sndobj = Sound(fs, snd)
 
     except DepthException as e:
-        print(e.message)
         print("Skipping...")
         return
 
@@ -40,10 +44,30 @@ def process(filename):
     print("Depth: {}-bit".format(sndobj.depth))
     print("============================"+"="*len(filename))
 
+    signals_to_save = None
+    for c in range(sndobj.channels):
+        print("Parsing channel {}".format(c))
+        cleaned_signal = parse(snd.T[c], sndobj)
+        if signals_to_save is None:
+            print("Setting")
+            signals_to_save = np.array(cleaned_signal)
+        else:
+            print("Stacking")
+            np.vstack([signals_to_save, cleaned_signal])
 
-    # for c in range(channels):
-    #    parse(snd.T[c], sndobj)
-    parse(snd.T[0], sndobj)
+    if DEBUG:
+        print("-------------")
+        print(signals_to_save)
+        print(len(signals_to_save))
+        print(sndobj.channels)
+        print(len(cleaned_signal))
+        print(len(signals_to_save[0]))
+        print("-------------")
+
+    output_filename = gen_output_filename(filename)
+    print("Saving to {}".format(output_filename))
+    wavfile.write(output_filename, rate=sndobj.fs, data=signals_to_save)
+
 
 def find_outstanding_frequencies(data, sndobj, points_per_sample):
     # THRESHOLD = 5000000
@@ -85,8 +109,18 @@ def find_outstanding_frequencies(data, sndobj, points_per_sample):
 
     return ret
 
-def extract_bandstop(candidates):
-    return []
+def extract_bandstop_frequencies(candidates):
+    return [(candidates[0][0]-50, candidates[0][1]+50)]
+    # return [candidates[0]]
+
+def bandstop(frequencies, sound_data, sndobj, order=10):
+    return sound_data
+    for ft in frequencies:
+        fa, fb = signal.butter(order,[ft[0]/sndobj.fs,ft[1]/sndobj.fs],'bandstop') # Bandstop filters
+        sound_data = signal.lfilter(fa, fb, sound_data)
+    return sound_data # Cleaned
+
+
 
 def parse(sound_data, sndobj):
     points_per_sample = FFT_SAMPLE_SIZE*sndobj.fs//1000
@@ -108,10 +142,20 @@ def parse(sound_data, sndobj):
             plt.clf()
 
         sample_freqs = find_outstanding_frequencies(real_data, sndobj, points_per_sample)
+        # Tuple of high and low bands
+        candidate_frequencies += sample_freqs
 
-    candidate_frequencies += sample_freqs
-    bandstop_frequencies = extract_bandstop(candidate_frequencies)
-    bandstop(bandstop_frequencies, sndobj)
+    bandstop_frequencies = extract_bandstop_frequencies(candidate_frequencies)
+    if not bandstop_frequencies:
+        print("No frequencies to remove...")
+        return sound_data
+
+    print("Removing the following frequencies:")
+    for ft in bandstop_frequencies:
+        print("{}-{}Hz".format(*ft))
+
+    cleaned = bandstop(bandstop_frequencies, sound_data, sndobj)
+    return cleaned
 
 for filename in sys.argv[1:]:
     process(filename)
