@@ -17,7 +17,14 @@ import re
 plt.ion() # Make the plot interactive
 # Allows us to update it in the code
 
-FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 100 # Hz
+FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 500 # Hz
+FREQUENCY_BANDSTOP_MARGIN = 100 # Hz
+FREQUENCY_MINIMUM_COUNT = 50
+FREQUENCY_MINIMUM = 12000 # Hz
+# Sounds under this frequency will not be removed
+FREQUENCY_HARD_MINIMUM_RATIO = 2
+# Frequencies less than the nyqsuit frequency divided
+# by this ratio are not considered in calculations
 
 FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
 
@@ -35,6 +42,7 @@ def process(filename):
         sndobj = Sound(fs, snd)
 
     except DepthException as e:
+        print("{}".format(e))
         print("Skipping...")
         return
 
@@ -68,7 +76,7 @@ def process(filename):
 def find_outstanding_frequencies(data, sndobj, points_per_sample):
     # THRESHOLD = 5000000
     diff_data = np.diff(data)
-    low_band = points_per_sample//4 # Half of our divided version
+    low_band = int(points_per_sample/(2 * FREQUENCY_HARD_MINIMUM_RATIO))
     # Above this value are frequencies that are considered for removal
 
     num_outstanding = 3
@@ -101,14 +109,41 @@ def find_outstanding_frequencies(data, sndobj, points_per_sample):
     ret = []
     for ind1 in high_ind:
         for ind2 in low_ind:
+            if(ind1 < FREQUENCY_MINIMUM or ind2 < FREQUENCY_MINIMUM): continue
             if abs(ind1 - ind2) < FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE:
                 ret.append((ind1, ind2) if ind2 > ind1 else(ind2, ind1))
 
     return ret
 
-def extract_bandstop_frequencies(candidates):
-    return [(candidates[0][0]-50, candidates[0][1]+50)]
-    # return [candidates[0]]
+def extract_bandstop_frequencies(cand):
+    candidates = np.array(cand)
+    candidates[:,1] += FREQUENCY_BANDSTOP_MARGIN
+    candidates[:,0] -= FREQUENCY_BANDSTOP_MARGIN
+
+    final = []
+    for c in np.array(candidates):
+        avg = (c[0] + c[1])/2
+        placed = False
+        for f in final:
+            favg = (f["data"][0] + f["data"][1])/(2 * f["count"])
+            if abs(avg - favg) < FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE:
+                f["count"] += 1
+                f["data"] += c
+                placed = True
+                break
+        if placed: continue
+        final.append({
+            "data": c,
+            "count": 1
+        });
+
+    ret = []
+    print(final)
+    for f in final:
+        if f["count"] > FREQUENCY_MINIMUM_COUNT:
+            ret.append(f["data"]/f["count"])
+
+    return ret
 
 def bandstop(frequencies, sound_data, sndobj, order=5):
     nyq = sndobj.fs * 0.5

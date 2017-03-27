@@ -16,7 +16,7 @@ class Sound(object):
 
         # Produces interesting results
         # if depth_type.num == 2:
-            # self.depth = 8
+        #    self.depth = 8
         if depth_type.num == 3:
             self.depth = 16
         # Not supported by scipy
