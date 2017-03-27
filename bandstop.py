@@ -45,7 +45,7 @@ def process(filename):
     print("Depth: {}-bit".format(sndobj.depth))
     print("============================"+"="*len(filename))
 
-    signals_to_save = np.array([], dtype=sndobj.snd.dtype).reshape(sndobj.samples, 0)
+    signals_to_save = np.array([], dtype=snd.dtype).reshape(sndobj.samples, 0)
     for c in range(sndobj.channels):
         print("Parsing channel {}".format(c))
         cleaned_signal = parse(snd.T[c], sndobj)
@@ -110,16 +110,18 @@ def extract_bandstop_frequencies(candidates):
     return [(candidates[0][0]-50, candidates[0][1]+50)]
     # return [candidates[0]]
 
-def bandstop(frequencies, sound_data, sndobj, order=10):
-    return sound_data
+def bandstop(frequencies, sound_data, sndobj, order=5):
+    nyq = sndobj.fs * 0.5
     for ft in frequencies:
-        fa, fb = signal.butter(order,[ft[0]/sndobj.fs,ft[1]/sndobj.fs],'bandstop') # Bandstop filters
-        sound_data = signal.lfilter(fa, fb, sound_data)
+        num, denom = signal.butter(order,[ft[0]/nyq,ft[1]/nyq], btype='bandstop', analog=False) # Bandstop filters
+        cleaned_data = signal.filtfilt(num, denom, sound_data).astype(sndobj.snd.dtype)
+        sound_data = cleaned_data
     return sound_data # Cleaned
 
 
 
-def parse(sound_data, sndobj):
+def parse(integer_data, sndobj):
+    sound_data = integer_data
     points_per_sample = FFT_SAMPLE_SIZE*sndobj.fs//1000
     # frequency_data = fftfreq(points_per_sample, FFT_SAMPLE_SIZE/1000)*points_per_sample * FFT_SAMPLE_SIZE/1000
     # frequency_conversion_ratio = fs/points_per_sample
