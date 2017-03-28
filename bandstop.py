@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 
-import sys
-if len(sys.argv) == 1:
-    print("usage: ./bandstop.py <files>")
-    sys.exit(1)
+import argparse
+
+parser = argparse.ArgumentParser(prog='bandstop.py', description='Automatically detect and filter persistent high frequencies')
+parser.add_argument("--break-on-failure", dest="break_on_failure", help='If a file cannot be read, terminate', action="store_true")
+parser.add_argument("files", metavar='filename', type=str, nargs='+', help='Files to read')
+
+args = parser.parse_args()
 
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.io import wavfile
-from scipy import signal
+from scipy.signal import butter, filtfilt
 from scipy.fftpack import fft, fftfreq
-import argparse
 from sound import Sound, DepthException
 import re
 
@@ -30,21 +32,24 @@ FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
 
 DEBUG = False
 SHOW_FFT = False
+BREAK_ON_SKIPS = False
 
 def gen_output_filename(filename):
     pattern = re.compile("\.[^.]+$")
     return pattern.sub("-out.wav", filename)
 
 def process(filename):
-    fs, snd = wavfile.read(filename)
-
     try:
+        fs, snd = wavfile.read(filename)
         sndobj = Sound(fs, snd)
 
-    except DepthException as e:
+    except (ValueError, DepthException) as e:
         print("{}".format(e))
+        print("File '{}' could not be read".format(filename))
+        print("Convert this file to either 16-bit or 32-bit PCM WAV file format")
+        if BREAK_ON_SKIPS: return False
         print("Skipping...")
-        return
+        return True
 
     print("==== Information about {} ====".format(filename))
     print("Samples: {}".format(sndobj.samples))
@@ -71,6 +76,8 @@ def process(filename):
     output_filename = gen_output_filename(filename)
     print("Saving to {}".format(output_filename))
     wavfile.write(output_filename, rate=sndobj.fs, data=signals_to_save)
+
+    return True
 
 
 def find_outstanding_frequencies(data, sndobj, points_per_sample):
@@ -138,7 +145,6 @@ def extract_bandstop_frequencies(cand):
         });
 
     ret = []
-    print(final)
     for f in final:
         if f["count"] > FREQUENCY_MINIMUM_COUNT:
             ret.append(f["data"]/f["count"])
@@ -148,8 +154,8 @@ def extract_bandstop_frequencies(cand):
 def bandstop(frequencies, sound_data, sndobj, order=5):
     nyq = sndobj.fs * 0.5
     for ft in frequencies:
-        num, denom = signal.butter(order,[ft[0]/nyq,ft[1]/nyq], btype='bandstop', analog=False) # Bandstop filters
-        cleaned_data = signal.filtfilt(num, denom, sound_data).astype(sndobj.snd.dtype)
+        num, denom = butter(order,[ft[0]/nyq,ft[1]/nyq], btype='bandstop', analog=False) # Bandstop filters
+        cleaned_data = filtfilt(num, denom, sound_data).astype(sndobj.snd.dtype)
         sound_data = cleaned_data
     return sound_data # Cleaned
 
@@ -191,5 +197,10 @@ def parse(integer_data, sndobj):
     cleaned = bandstop(bandstop_frequencies, sound_data, sndobj)
     return cleaned
 
-for filename in sys.argv[1:]:
-    process(filename)
+if args.break_on_failure:
+    BREAK_ON_SKIPS = True
+
+print(args.files)
+for f in args.files:
+    if not process(f):
+        print("Terminating...")
