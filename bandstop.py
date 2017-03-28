@@ -11,7 +11,7 @@ args = parser.parse_args()
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.io import wavfile
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, lfilter
 from scipy.fftpack import fft, fftfreq
 from sound import Sound, DepthException
 import re
@@ -20,13 +20,14 @@ plt.ion() # Make the plot interactive
 # Allows us to update it in the code
 
 FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 500 # Hz
-FREQUENCY_BANDSTOP_MARGIN = 100 # Hz
+FREQUENCY_BANDSTOP_MARGIN = 50 # Hz
 FREQUENCY_MINIMUM_COUNT = 50
 FREQUENCY_MINIMUM = 12000 # Hz
 # Sounds under this frequency will not be removed
 FREQUENCY_HARD_MINIMUM_RATIO = 2
 # Frequencies less than the nyqsuit frequency divided
 # by this ratio are not considered in calculations
+AUDIO_DAMPING_SCALE = 1.01 # Prevent peaks
 
 FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
 
@@ -151,18 +152,18 @@ def extract_bandstop_frequencies(cand):
 
     return ret
 
-def bandstop(frequencies, sound_data, sndobj, order=5):
+def bandstop(frequencies, sound_data, sndobj, order=1):
     nyq = sndobj.fs * 0.5
     for ft in frequencies:
         num, denom = butter(order,[ft[0]/nyq,ft[1]/nyq], btype='bandstop', analog=False) # Bandstop filters
-        cleaned_data = filtfilt(num, denom, sound_data).astype(sndobj.snd.dtype)
+        cleaned_data = lfilter(num, denom, sound_data).astype(sndobj.snd.dtype)
         sound_data = cleaned_data
     return sound_data # Cleaned
 
 
 
 def parse(integer_data, sndobj):
-    sound_data = integer_data
+    sound_data = integer_data/AUDIO_DAMPING_SCALE
     points_per_sample = FFT_SAMPLE_SIZE*sndobj.fs//1000
     # frequency_data = fftfreq(points_per_sample, FFT_SAMPLE_SIZE/1000)*points_per_sample * FFT_SAMPLE_SIZE/1000
     # frequency_conversion_ratio = fs/points_per_sample
