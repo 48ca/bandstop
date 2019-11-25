@@ -17,9 +17,9 @@ import re
 plt.ion() # Make the plot interactive
 # Allows us to update it in the code
 
-FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 100 # Hz
+FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 10 # Hz
 
-FFT_SAMPLE_SIZE = 2000 # FFT sample size in milliseconds
+FFT_SAMPLE_SIZE = 20000 # FFT sample size in milliseconds
 
 DEBUG = False
 SHOW_FFT = False
@@ -35,6 +35,7 @@ def process(filename):
         sndobj = Sound(fs, snd)
 
     except DepthException as e:
+        print(e)
         print("Skipping...")
         return
 
@@ -45,20 +46,13 @@ def process(filename):
     print("Depth: {}-bit".format(sndobj.depth))
     print("============================"+"="*len(filename))
 
-    signals_to_save = np.array([], dtype=sndobj.snd.dtype).reshape(sndobj.samples, 0)
+    signals_to_save = np.array([], dtype=np.int64).reshape(sndobj.samples, 0)
     for c in range(sndobj.channels):
         print("Parsing channel {}".format(c))
         cleaned_signal = parse(snd.T[c], sndobj)
         signals_to_save = np.column_stack([signals_to_save, cleaned_signal])
-
-    if DEBUG:
-        print("-------------")
-        print(signals_to_save)
-        print(len(signals_to_save))
-        print(sndobj.channels)
-        print(len(cleaned_signal))
-        print(len(signals_to_save[0]))
-        print("-------------")
+        if DEBUG:
+            print(signals_to_save)
 
     output_filename = gen_output_filename(filename)
     print("Saving to {}".format(output_filename))
@@ -110,16 +104,32 @@ def extract_bandstop_frequencies(candidates):
     return [(candidates[0][0]-50, candidates[0][1]+50)]
     # return [candidates[0]]
 
-def bandstop(frequencies, sound_data, sndobj, order=10):
-    return sound_data
+def rms(a):
+    b = np.array(a, dtype=np.int64)
+    return np.sqrt(np.mean(b ** 2))
+
+def bandstop(frequencies, sound_data, sndobj):
     for ft in frequencies:
-        fa, fb = signal.butter(order,[ft[0]/sndobj.fs,ft[1]/sndobj.fs],'bandstop') # Bandstop filters
-        sound_data = signal.lfilter(fa, fb, sound_data)
+        if DEBUG:
+            print("Old RMS: {}".format(rms(sound_data)))
+        center = (ft[0] + ft[1])/2
+        w0 = center/(sndobj.fs/2)
+        dist = abs(ft[0] - ft[1])
+        q = 2 * center/dist
+        if(dist < 10):
+            dist = 10
+        if DEBUG:
+            print("w0: {}, Q: {}".format(w0, 2 * center/dist))
+        fa, fb = signal.iirnotch(w0, 2 * center/dist) # Bandstop filters
+        sound_data = signal.filtfilt(fa, fb, sound_data)
+        if DEBUG:
+            print("New RMS: {}".format(rms(sound_data)))
     return sound_data # Cleaned
 
 
 
 def parse(sound_data, sndobj):
+    print("Parsing sound data: RMS: {}".format(rms(sound_data)))
     points_per_sample = FFT_SAMPLE_SIZE*sndobj.fs//1000
     # frequency_data = fftfreq(points_per_sample, FFT_SAMPLE_SIZE/1000)*points_per_sample * FFT_SAMPLE_SIZE/1000
     # frequency_conversion_ratio = fs/points_per_sample
