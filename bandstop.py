@@ -17,12 +17,13 @@ import re
 plt.ion() # Make the plot interactive
 # Allows us to update it in the code
 
-FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 10 # Hz
+FFT_SAMPLE_SIZE = 10000 # FFT sample size in milliseconds
+FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE = 50 # Hz
+FREQUENCY_BANDSTOP_MARGIN = 50 # Hz
+FREQUENCY_MINIMUM_COUNT = 20 # this should be inversely proportional to FFT_SAMPLE_SIZE
 
-FFT_SAMPLE_SIZE = 20000 # FFT sample size in milliseconds
-
-DEBUG = False
-SHOW_FFT = False
+DEBUG = True
+SHOW_FFT = True
 
 def gen_output_filename(filename):
     pattern = re.compile("\.[^.]+$")
@@ -100,9 +101,36 @@ def find_outstanding_frequencies(data, sndobj, points_per_sample):
 
     return ret
 
-def extract_bandstop_frequencies(candidates):
-    return [(candidates[0][0]-50, candidates[0][1]+50)]
-    # return [candidates[0]]
+def extract_bandstop_frequencies(cand):
+    candidates = np.array(cand)
+    candidates[:,1] += FREQUENCY_BANDSTOP_MARGIN
+    candidates[:,0] -= FREQUENCY_BANDSTOP_MARGIN
+
+    final = []
+    for c in np.array(candidates):
+        avg = (c[0] + c[1])/2
+        placed = False
+        for f in final:
+            favg = (f["data"][0] + f["data"][1])/(2 * f["count"])
+            if abs(avg - favg) < FREQUENCY_MAXIMUM_DIFFERENTIATING_DIFFERENCE:
+                f["count"] += 1
+                f["data"] += c
+                placed = True
+                break
+        if placed: continue
+        final.append({
+            "data": c,
+            "count": 1
+        });
+
+    ret = []
+    if DEBUG:
+        print(final)
+    for f in final:
+        if f["count"] > FREQUENCY_MINIMUM_COUNT:
+            ret.append(f["data"]/f["count"])
+
+    return ret
 
 def rms(a):
     b = np.array(a, dtype=np.int64)
